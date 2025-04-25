@@ -48,7 +48,11 @@
     }
     header img { max-height: 80px; }
     header h1 { margin: 0; color: #D4AF37; font-size: 2em; }
-    nav { display: flex; gap: 15px; }
+    nav {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+    }
     nav button {
       background: #D4AF37;
       color: #121212;
@@ -58,6 +62,8 @@
       font-size: 1em;
       cursor: pointer;
       transition: background 0.3s;
+      min-width: 120px;
+      text-align: center;
     }
     nav button:hover { background: #b0892c; }
     /* Contenedor principal */
@@ -149,21 +155,37 @@
     .home-container h2 { color: #D4AF37; font-size: 2.5em; margin-bottom: 10px; }
     .home-container p { font-size: 1.2em; margin-bottom: 10px; }
     .contact-info p { margin: 5px; font-size: 1em; }
-    .contact-info a { color: #D4AF37; text-decoration: none; font-weight: bold; margin: 0 10px; }
-    .contact-info a:hover { text-decoration: underline; }
-.contact-info p.social-links {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      margin: 10px 0;
-    }
+    /* Redes sociales: forzamos inline-flex para que el icono y texto queden en una sola línea */
     .contact-info a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       color: #D4AF37;
       text-decoration: none;
       font-weight: bold;
+      margin: 0 10px;
     }
     .contact-info a:hover { text-decoration: underline; }
-
+    
+    /* Estilos para la sección "Mis Citas" */
+    #userAppointments {
+      background: #1e1e1e;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+    }
+    #userAppointments h2 {
+      text-align: center;
+      color: #D4AF37;
+    }
+    .user-appointment {
+      background: #121212;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #D4AF37;
+      border-radius: 5px;
+    }
+    
     /* Modal de edición */
     #editModal {
       position: fixed;
@@ -225,6 +247,7 @@
     <nav>
       <button id="btnHome">Inicio</button>
       <button id="btnClient">Agendar Cita</button>
+      <button id="btnUserAppointments">Mis Citas</button>
       <button id="btnAdmin">Administrador</button>
     </nav>
   </header>
@@ -255,6 +278,10 @@
         <label for="clientName">Nombre Completo:</label>
         <input type="text" id="clientName" required>
         
+        <!-- Nuevo campo: Número de WhatsApp o celular -->
+        <label for="clientPhone">Número de WhatsApp:</label>
+        <input type="tel" id="clientPhone" required>
+        
         <label for="clientDate">Seleccione un día:</label>
         <input type="date" id="clientDate" required>
         
@@ -270,7 +297,6 @@
           <option value="barba_aceite">Barba y aceite (Combo) ($220)</option>
           <option value="corte_barba_aceite">Corte, barba y aceite (Combo) ($320)</option>
         </select>
-        
         <fieldset>
           <legend>Productos disponibles:</legend>
           <input type="checkbox" id="product1" value="Cera">
@@ -284,7 +310,6 @@
           <input type="checkbox" id="product5" value="Gel c/tinte">
           <label for="product5">Gel c/tinte ($100)</label><br>
         </fieldset>
-        
         <button type="submit">Continuar</button>
       </form>
       <div id="hoursSection" class="hidden">
@@ -294,6 +319,13 @@
       </div>
       <div id="clientMessage"></div>
       <button id="btnClientBack">Volver</button>
+    </section>
+    
+    <!-- Sección de "Mis Citas" (vista por dispositivo) -->
+    <section id="userAppointments" class="hidden">
+      <h2>Mis Citas</h2>
+      <div id="userAppointmentsContainer"></div>
+      <button id="btnUserAppointmentsBack">Volver</button>
     </section>
     
     <!-- Sección de Login del Administrador -->
@@ -368,6 +400,13 @@
   </div>
   
   <script>
+    // --- Generación de un identificador único de dispositivo ---
+    let deviceId = localStorage.getItem("deviceId");
+    if (!deviceId) {
+      deviceId = "device_" + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem("deviceId", deviceId);
+    }
+    
     // Definición de precios
     const servicePrices = {
       "corte": 120,
@@ -403,9 +442,12 @@
         data.id = doc.id;
         appointments.push(data);
       });
-      // Si el panel de administración está visible, refrescamos el contenido.
+      // Actualizamos el panel de administración y "Mis Citas" si están visibles.
       if (!document.getElementById("adminPanel").classList.contains("hidden")) {
         renderAdminPanel();
+      }
+      if (!document.getElementById("userAppointments").classList.contains("hidden")) {
+        renderUserAppointments();
       }
     });
     
@@ -428,6 +470,13 @@
     document.getElementById("btnAdmin").addEventListener("click", () => showSection("adminLogin"));
     document.getElementById("btnAdminBack").addEventListener("click", () => showSection("home"));
     
+    // Navegación para "Mis Citas"
+    document.getElementById("btnUserAppointments").addEventListener("click", () => {
+      renderUserAppointments();
+      showSection("userAppointments");
+    });
+    document.getElementById("btnUserAppointmentsBack").addEventListener("click", () => showSection("home"));
+    
     // Renderizado de las horas disponibles para la reserva
     function renderAvailableHours(date) {
       const hoursContainer = document.getElementById("hoursContainer");
@@ -435,15 +484,14 @@
       selectedHour = null;
       const hours = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
       const todayStr = new Date().toISOString().split("T")[0];
+      // Si la fecha seleccionada ya fue pasada
+      const isPastDate = date < todayStr;
+      
       hours.forEach(hour => {
         const isBooked = appointments.some(app => app.date === date && app.time === hour);
         const button = document.createElement("button");
         button.textContent = hour;
-        if (isBooked) {
-          button.disabled = true;
-          button.style.textDecoration = "line-through";
-          button.style.color = "gray";
-        } else if (date === todayStr && new Date() > new Date(date + "T" + hour)) {
+        if (isBooked || isPastDate || (date === todayStr && new Date() > new Date(date + "T" + hour))) {
           button.disabled = true;
           button.style.textDecoration = "line-through";
           button.style.color = "gray";
@@ -474,6 +522,7 @@
       e.preventDefault();
       const name = document.getElementById("clientName").value;
       const date = document.getElementById("clientDate").value;
+      const phone = document.getElementById("clientPhone").value; // Nuevo campo
       const cutType = document.getElementById("cutType").value;
       const selectedProducts = Array.from(document.querySelectorAll("#clientForm input[type=checkbox]:checked"))
                                    .map(product => product.value);
@@ -486,7 +535,7 @@
         document.getElementById("clientMessage").textContent = "Debe seleccionar el servicio.";
         return;
       }
-      clientData = { name, date, selectedProducts, cutType };
+      clientData = { name, date, phone, selectedProducts, cutType };
       document.getElementById("selectedDate").textContent = date;
       document.getElementById("hoursSection").classList.remove("hidden");
       renderAvailableHours(date);
@@ -495,14 +544,15 @@
     
     document.getElementById("btnAcceptAppointment").addEventListener("click", function() {
       if (!selectedHour) return;
-      reserveHour(clientData.name, clientData.date, selectedHour, clientData.selectedProducts, clientData.cutType);
+      // Agregar el nuevo parámetro "phone"
+      reserveHour(clientData.name, clientData.date, selectedHour, clientData.selectedProducts, clientData.cutType, clientData.phone);
       document.getElementById("clientForm").reset();
       clientData = {};
       selectedHour = null;
     });
     
-    // Reserva de cita (calcula precio y crea objeto) y lo agrega en Firestore
-    function reserveHour(name, date, hour, products, cutType) {
+    // Reserva de cita: calcula precio, añade deviceId y lo agrega en Firestore
+    function reserveHour(name, date, hour, products, cutType, phone) {
       let price = servicePrices[cutType] || 0;
       products.forEach(product => { price += productPrices[product] || 0; });
       const newAppointment = {
@@ -511,9 +561,11 @@
         time: hour,
         products,
         cutType,
+        phone, // Se almacena el número de WhatsApp o celular
         monto: price,
         estatus: "Próximo corte",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        deviceId: deviceId
       };
       addAppointment(newAppointment);
       document.getElementById("clientMessage").textContent =
@@ -556,6 +608,7 @@
       container.classList.add("appointment");
       container.innerHTML = `
         <p><strong>Nombre:</strong> ${app.name}</p>
+        <p><strong>Teléfono:</strong> ${app.phone || "No especificado"}</p>
         <p><strong>Fecha:</strong> ${app.date}</p>
         <p><strong>Hora:</strong> ${app.time}</p>
         <p><strong>Servicio:</strong> ${app.cutType || "Sin especificar"}</p>
@@ -602,6 +655,10 @@
       groupFinalizado.innerHTML = "<h3>Corte Terminado</h3>";
       
       appointments.forEach((app, index) => {
+        // Si la cita fue cancelada, se omite en el área de administrador.
+        if (app.estatus === "Cita cancelada por el administrador") {
+          return;
+        }
         const appDateTime = new Date(app.date + "T" + app.time);
         if (app.estatus === "Próximo corte" && appDateTime < now) {
           app.estatus = "Corte no realizado";
@@ -660,6 +717,46 @@
             openEditModal(parseInt(idx, 10));
           }
         });
+      });
+    }
+    
+    // Función para crear un elemento visual para "Mis Citas" (solo lectura)
+    function createUserAppointmentElement(app) {
+      const container = document.createElement("div");
+      container.classList.add("user-appointment");
+      if(app.estatus === "Cita cancelada por el administrador") {
+        container.innerHTML = `
+          <p><strong>Cita Cancelada</strong></p>
+          <p><strong>Fecha de la cita:</strong> ${app.date}</p>
+          <p><strong>Fecha de cancelación:</strong> ${app.canceledAt || "No especificado"}</p>
+        `;
+        return container;
+      }
+      container.innerHTML = `
+        <p><strong>Nombre:</strong> ${app.name}</p>
+        <p><strong>Teléfono:</strong> ${app.phone || "No especificado"}</p>
+        <p><strong>Fecha:</strong> ${app.date}</p>
+        <p><strong>Hora:</strong> ${app.time}</p>
+        <p><strong>Servicio:</strong> ${app.cutType || "Sin especificar"}</p>
+        <p><strong>Productos:</strong> ${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</p>
+        <p><strong>Ingreso:</strong> $${app.monto}</p>
+        <p><strong>Estatus:</strong> ${app.estatus}</p>
+      `;
+      return container;
+    }
+    
+    // Función para renderizar las citas generadas por el dispositivo (Mis Citas)
+    function renderUserAppointments() {
+      const userAppointmentsContainer = document.getElementById("userAppointmentsContainer");
+      userAppointmentsContainer.innerHTML = "";
+      const userAppointments = appointments.filter(app => app.deviceId === deviceId);
+      if (userAppointments.length === 0) {
+        userAppointmentsContainer.innerHTML = "<p>No tienes citas registradas en este dispositivo.</p>";
+        return;
+      }
+      userAppointments.forEach(app => {
+        const elem = createUserAppointmentElement(app);
+        userAppointmentsContainer.appendChild(elem);
       });
     }
     
@@ -765,12 +862,18 @@
       }
     });
     
+    // Modificación: al cancelar la cita desde el administrador se actualiza el estatus
     document.getElementById("deleteAppointment").addEventListener("click", async function() {
       const idx = currentEditingIndex;
       if (idx !== null) {
         if (confirm("¿Estás seguro de que deseas cancelar la cita?")) {
           let appointment = appointments[idx];
-          await db.collection("appointments").doc(appointment.id).delete();
+          const cancellationTime = new Date().toISOString();
+          appointment.canceledAt = cancellationTime;
+          await db.collection("appointments").doc(appointment.id).update({
+            estatus: "Cita cancelada por el administrador",
+            canceledAt: cancellationTime
+          });
           renderAdminPanel();
           closeEditModal();
           alert("Cita cancelada.");
@@ -796,7 +899,9 @@
     document.getElementById("btnVisitCount").addEventListener("click", function() {
       const counts = {};
       appointments.forEach(app => {
-        counts[app.name] = (counts[app.name] || 0) + 1;
+        if(app.estatus !== "Cita cancelada por el administrador") {
+          counts[app.name] = (counts[app.name] || 0) + 1;
+        }
       });
       let html = "<html><head><title>Conteo de Visitas</title>";
       html += "<style>body { font-family: Arial, sans-serif; background: #121212; color: #fff; padding: 20px; } ";
