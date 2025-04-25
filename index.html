@@ -312,6 +312,7 @@
         </fieldset>
         <button type="submit">Continuar</button>
       </form>
+      
       <div id="hoursSection" class="hidden">
         <h3>Horas disponibles para <span id="selectedDate"></span>:</h3>
         <div class="hours-container" id="hoursContainer"></div>
@@ -488,7 +489,8 @@
       const isPastDate = date < todayStr;
       
       hours.forEach(hour => {
-        const isBooked = appointments.some(app => app.date === date && app.time === hour);
+        // Se consideran reservadas únicamente las citas activas (no canceladas)
+        const isBooked = appointments.some(app => app.date === date && app.time === hour && app.estatus !== "Cita cancelada por el administrador");
         const button = document.createElement("button");
         button.textContent = hour;
         if (isBooked || isPastDate || (date === todayStr && new Date() > new Date(date + "T" + hour))) {
@@ -594,133 +596,7 @@
       showSection("home");
     });
     
-    // Crea el elemento HTML para cada cita en el panel de administración
-    function createAppointmentElement(app, index) {
-      let estClass = "";
-      if (app.estatus === "Próximo corte") {
-        estClass = "estatus-proximo";
-      } else if (app.estatus === "Corte no realizado") {
-        estClass = "estatus-pendiente";
-      } else if (app.estatus === "Corte Terminado") {
-        estClass = "estatus-finalizado";
-      }
-      const container = document.createElement("div");
-      container.classList.add("appointment");
-      container.innerHTML = `
-        <p><strong>Nombre:</strong> ${app.name}</p>
-        <p><strong>Teléfono:</strong> ${app.phone || "No especificado"}</p>
-        <p><strong>Fecha:</strong> ${app.date}</p>
-        <p><strong>Hora:</strong> ${app.time}</p>
-        <p><strong>Servicio:</strong> ${app.cutType || "Sin especificar"}</p>
-        <p><strong>Productos:</strong> ${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</p>
-        <p>
-          <strong>Ingreso:</strong> $${app.monto} 
-          <input type="number" value="${app.monto}" data-index="${index}" style="width:75px; background:#121212; color:#fff; border:1px solid #D4AF37;">
-        </p>
-        <p><strong>Estatus:</strong> <span class="${estClass}">${app.estatus}</span></p>
-        <div>
-          <button class="btnTerminado" data-index="${index}" style="background:#D4AF37; border:none; padding:5px 10px; border-radius:3px; color:#121212;">Terminar corte</button>
-          <button class="btnModificar" data-index="${index}" style="background:#D4AF37; border:none; padding:5px 10px; border-radius:3px; color:#121212; margin-left:5px;">Modificar cita</button>
-        </div>
-      `;
-      return container;
-    }
-    
-    function renderAdminPanel() {
-      // Purga de citas "Corte Terminado" de más de 3 días (opcional)
-      const now = new Date();
-      appointments.forEach(async (app, index) => {
-        if (app.estatus === "Corte Terminado" && app.finalizedAt) {
-          const finalizedTime = new Date(app.finalizedAt).getTime();
-          const threeDaysInMs = 3 * 24 * 60 * 60 * 1000;
-          if (now - finalizedTime >= threeDaysInMs) {
-            await db.collection("appointments").doc(app.id).delete();
-          }
-        }
-      });
-      
-      const adminContainer = document.getElementById("adminContainer");
-      adminContainer.innerHTML = "";
-      
-      const groupProximo = document.createElement("div");
-      groupProximo.className = "status-group";
-      groupProximo.innerHTML = "<h3>Próximo corte</h3>";
-      
-      const groupPendiente = document.createElement("div");
-      groupPendiente.className = "status-group";
-      groupPendiente.innerHTML = "<h3>Corte no realizado</h3>";
-      
-      const groupFinalizado = document.createElement("div");
-      groupFinalizado.className = "status-group";
-      groupFinalizado.innerHTML = "<h3>Corte Terminado</h3>";
-      
-      appointments.forEach((app, index) => {
-        // Si la cita fue cancelada, se omite en el área de administrador.
-        if (app.estatus === "Cita cancelada por el administrador") {
-          return;
-        }
-        const appDateTime = new Date(app.date + "T" + app.time);
-        if (app.estatus === "Próximo corte" && appDateTime < now) {
-          app.estatus = "Corte no realizado";
-          db.collection("appointments").doc(app.id).update({ estatus: "Corte no realizado" });
-        }
-        const appointmentElement = createAppointmentElement(app, index);
-        if (app.estatus === "Próximo corte") {
-          groupProximo.appendChild(appointmentElement);
-        } else if (app.estatus === "Corte no realizado") {
-          groupPendiente.appendChild(appointmentElement);
-        } else if (app.estatus === "Corte Terminado") {
-          groupFinalizado.appendChild(appointmentElement);
-        }
-      });
-      
-      if (groupProximo.children.length <= 1) {
-        const msg = document.createElement("p");
-        msg.textContent = "No hay citas próximas.";
-        groupProximo.appendChild(msg);
-      }
-      if (groupPendiente.children.length <= 1) {
-        const msg = document.createElement("p");
-        msg.textContent = "No hay citas pendientes.";
-        groupPendiente.appendChild(msg);
-      }
-      if (groupFinalizado.children.length <= 1) {
-        const msg = document.createElement("p");
-        msg.textContent = "No hay citas terminadas.";
-        groupFinalizado.appendChild(msg);
-      }
-      
-      adminContainer.appendChild(groupProximo);
-      adminContainer.appendChild(groupPendiente);
-      adminContainer.appendChild(groupFinalizado);
-      
-      document.querySelectorAll(".btnTerminado").forEach(button => {
-        button.addEventListener("click", async function() {
-          const idx = this.getAttribute("data-index");
-          let app = appointments[idx];
-          app.estatus = "Corte Terminado";
-          app.finalizedAt = new Date().toISOString();
-          await db.collection("appointments").doc(app.id).update({
-            estatus: "Corte Terminado",
-            finalizedAt: app.finalizedAt
-          });
-          alert("Cita marcada como Corte Terminado. Se borrará automáticamente en 3 días.");
-          renderAdminPanel();
-        });
-      });
-      
-      document.querySelectorAll(".btnModificar").forEach(button => {
-        button.addEventListener("click", function() {
-          const idx = this.getAttribute("data-index");
-          if (idx !== null) {
-            currentEditingIndex = idx;
-            openEditModal(parseInt(idx, 10));
-          }
-        });
-      });
-    }
-    
-    // Función para crear un elemento visual para "Mis Citas" (solo lectura)
+    // Función para renderizar las citas generadas por el dispositivo (Mis Citas)
     function createUserAppointmentElement(app) {
       const container = document.createElement("div");
       container.classList.add("user-appointment");
@@ -769,7 +645,7 @@
       hours.forEach(hour => {
         let isBooked = appointments.some((app, index) => {
           if(index == currentEditingIndex) return false;
-          return app.date === selectedDate && app.time === hour;
+          return app.date === selectedDate && app.time === hour && app.estatus !== "Cita cancelada por el administrador";
         });
         let isPast = false;
         if (selectedDate === todayStr && new Date() > new Date(selectedDate + "T" + hour)) {
@@ -885,11 +761,12 @@
       closeEditModal();
     });
     
+    // Botón "Finalizar Corte" modificado: solo se suman las citas del día actual con estatus "Corte Terminado"
     document.getElementById("btnFinalizarCorte").addEventListener("click", function() {
       const now = new Date();
       const todayStr = now.toISOString().split("T")[0];
       const total = appointments
-                      .filter(app => app.date === todayStr)
+                      .filter(app => app.date === todayStr && app.estatus === "Corte Terminado")
                       .reduce((sum, app) => sum + (app.monto || 0), 0);
       const endOfDay = new Date(todayStr + "T23:59:59");
       let statusMessage = now < endOfDay ? "(hasta el momento)" : "(final)";
@@ -916,6 +793,130 @@
       newWindow.document.write(html);
       newWindow.document.close();
     });
+    
+    // Función para renderizar las citas en el panel de administración
+    // Se añaden los botones "Terminar corte" y "Modificar cita"
+    function createAppointmentElement(app, index) {
+      let estClass = "";
+      if (app.estatus === "Próximo corte") {
+        estClass = "estatus-proximo";
+      } else if (app.estatus === "Corte no realizado") {
+        estClass = "estatus-pendiente";
+      } else if (app.estatus === "Corte Terminado") {
+        estClass = "estatus-finalizado";
+      }
+      const container = document.createElement("div");
+      container.classList.add("appointment");
+      container.innerHTML = `
+        <p><strong>Nombre:</strong> ${app.name}</p>
+        <p><strong>Teléfono:</strong> ${app.phone || "No especificado"}</p>
+        <p><strong>Fecha:</strong> ${app.date}</p>
+        <p><strong>Hora:</strong> ${app.time}</p>
+        <p><strong>Servicio:</strong> ${app.cutType || "Sin especificar"}</p>
+        <p><strong>Productos:</strong> ${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</p>
+        <p><strong>Ingreso:</strong> $${app.monto}</p>
+        <p><strong>Estatus:</strong> ${app.estatus}</p>
+        <div>
+          <button class="btnTerminado" data-index="${index}" style="background:#D4AF37; border:none; padding:5px 10px; border-radius:3px; color:#121212;">Terminar corte</button>
+          <button class="btnModificar" data-index="${index}" style="background:#D4AF37; border:none; padding:5px 10px; border-radius:3px; color:#121212; margin-left:5px;">Modificar cita</button>
+        </div>
+      `;
+      return container;
+    }
+    
+    function renderAdminPanel() {
+      // Purga de citas "Corte Terminado" de más de 3 días (opcional)
+      const now = new Date();
+      appointments.forEach(async (app, index) => {
+        if (app.estatus === "Corte Terminado" && app.finalizedAt) {
+          const finalizedTime = new Date(app.finalizedAt).getTime();
+          const threeDaysInMs = 3 * 24 * 60 * 60 * 1000;
+          if (now - finalizedTime >= threeDaysInMs) {
+            await db.collection("appointments").doc(app.id).delete();
+          }
+        }
+      });
+      
+      const adminContainer = document.getElementById("adminContainer");
+      adminContainer.innerHTML = "";
+      
+      const groupProximo = document.createElement("div");
+      groupProximo.className = "status-group";
+      groupProximo.innerHTML = "<h3>Próximo corte</h3>";
+      
+      const groupPendiente = document.createElement("div");
+      groupPendiente.className = "status-group";
+      groupPendiente.innerHTML = "<h3>Corte no realizado</h3>";
+      
+      const groupFinalizado = document.createElement("div");
+      groupFinalizado.className = "status-group";
+      groupFinalizado.innerHTML = "<h3>Corte Terminado</h3>";
+      
+      appointments.forEach((app, index) => {
+        // Si la cita fue cancelada, se omite en el área de administrador.
+        if (app.estatus === "Cita cancelada por el administrador") {
+          return;
+        }
+        const appDateTime = new Date(app.date + "T" + app.time);
+        if (app.estatus === "Próximo corte" && appDateTime < now) {
+          app.estatus = "Corte no realizado";
+          db.collection("appointments").doc(app.id).update({ estatus: "Corte no realizado" });
+        }
+        const appointmentElement = createAppointmentElement(app, index);
+        if (app.estatus === "Próximo corte") {
+          groupProximo.appendChild(appointmentElement);
+        } else if (app.estatus === "Corte no realizado") {
+          groupPendiente.appendChild(appointmentElement);
+        } else if (app.estatus === "Corte Terminado") {
+          groupFinalizado.appendChild(appointmentElement);
+        }
+      });
+      
+      if (groupProximo.children.length <= 1) {
+        const msg = document.createElement("p");
+        msg.textContent = "No hay citas próximas.";
+        groupProximo.appendChild(msg);
+      }
+      if (groupPendiente.children.length <= 1) {
+        const msg = document.createElement("p");
+        msg.textContent = "No hay citas pendientes.";
+        groupPendiente.appendChild(msg);
+      }
+      if (groupFinalizado.children.length <= 1) {
+        const msg = document.createElement("p");
+        msg.textContent = "No hay citas terminadas.";
+        groupFinalizado.appendChild(msg);
+      }
+      
+      adminContainer.appendChild(groupProximo);
+      adminContainer.appendChild(groupPendiente);
+      adminContainer.appendChild(groupFinalizado);
+      
+      document.querySelectorAll(".btnTerminado").forEach(button => {
+        button.addEventListener("click", async function() {
+          const idx = this.getAttribute("data-index");
+          let app = appointments[idx];
+          app.estatus = "Corte Terminado";
+          app.finalizedAt = new Date().toISOString();
+          await db.collection("appointments").doc(app.id).update({
+            estatus: "Corte Terminado",
+            finalizedAt: app.finalizedAt
+          });
+          alert("Cita marcada como Corte Terminado. Se borrará automáticamente en 3 días.");
+          renderAdminPanel();
+        });
+      });
+      
+      document.querySelectorAll(".btnModificar").forEach(button => {
+        button.addEventListener("click", function() {
+          const idx = this.getAttribute("data-index");
+          if (idx !== null) {
+            currentEditingIndex = idx;
+            openEditModal(parseInt(idx, 10));
+          }
+        });
+      });
+    }
   </script>
 </body>
 </html>
