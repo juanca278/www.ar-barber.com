@@ -12,45 +12,8 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
   
-  <script>
-    // Función auxiliar para generar franjas horarias en formato "HH:MM" cada <step> minutos.
-    function generateTimeSlots(start, end, step = 30) {
-      const [startHour, startMin] = start.split(":").map(Number);
-      const [endHour, endMin] = end.split(":").map(Number);
-      const slots = [];
-      let totalMinutes = startHour * 60 + startMin;
-      const endTotal = endHour * 60 + endMin;
-      while(totalMinutes <= endTotal) {
-        let hour = Math.floor(totalMinutes / 60);
-        let minute = totalMinutes % 60;
-        let label = (hour < 10 ? "0" : "") + hour + ":" + (minute < 10 ? "0" : "") + minute;
-        slots.push(label);
-        totalMinutes += step;
-      }
-      return slots;
-    }
-    
-    // Franjas de servicio: de 09:30 a 12:30 y de 15:00 a 19:30 (cada media hora)
-    const morningSlots = generateTimeSlots("09:30", "12:30", 30);
-    const afternoonSlots = generateTimeSlots("15:00", "19:30", 30);
-    const serviceSlots = morningSlots.concat(afternoonSlots);
-    
-    // Inicialización de Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyAuCecYVh9CiAlW6dWNrZuzuLq2DETtq1k",
-      authDomain: "ar-barber.firebaseapp.com",
-      projectId: "ar-barber",
-      storageBucket: "ar-barber.firebasestorage.app",
-      messagingSenderId: "663202339677",
-      appId: "1:663202339677:web:441b1abf0d0ff5034966b4",
-      measurementId: "G-3WBEMN22HX"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-  </script>
-  
   <style>
-    /* Estilos generales */
+    /* Estilos generales, header, formularios y secciones */
     * { box-sizing: border-box; }
     body {
       font-family: "Times New Roman", serif;
@@ -127,7 +90,7 @@
       border-radius: 10px;
     }
     fieldset legend { padding: 0 10px; }
-    /* Estilos para checkboxes */
+    /* Estilo para checkboxes */
     fieldset label {
       display: inline-flex;
       align-items: center;
@@ -205,6 +168,7 @@
       border-radius: 5px;
     }
     .user-appointment p { margin: 5px 0; font-size: 0.95em; }
+    /* Modal para editar citas */
     #editModal {
       position: fixed;
       top: 0;
@@ -225,31 +189,12 @@
       max-width: 500px;
       box-shadow: 0 4px 8px rgba(0,0,0,0.8);
     }
-    .status-group {
-      background: #2c2c2c;
-      border: 1px solid #D4AF37;
-      border-radius: 10px;
-      padding: 20px;
-      width: 100%;
-      max-width: 350px;
-      margin: 10px;
+    .modal-buttons button { margin-right: 10px; }
+    /* Agregado: tachado para opciones deshabilitadas en el select de editar cita */
+    select#editTime option:disabled {
+      text-decoration: line-through;
+      color: gray;
     }
-    .status-group h3 {
-      margin-bottom: 15px;
-      color: #D4AF37;
-      text-align: center;
-    }
-    .appointment {
-      background: #121212;
-      padding: 15px;
-      border: 1px solid #D4AF37;
-      border-radius: 5px;
-      margin-bottom: 10px;
-    }
-    .appointment p { margin: 5px 0; font-size: 0.95em; }
-    .estatus-proximo { color: yellow; font-weight: bold; }
-    .estatus-pendiente { color: red; font-weight: bold; }
-    .estatus-finalizado { color: green; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -282,17 +227,20 @@
         </div>
       </div>
     </section>
-  
-    <!-- Sección de Cliente -->
+    
+    <!-- Sección de Agendar Cita -->
     <section id="clientSection" class="hidden">
       <h2>Reservar Cita</h2>
       <form id="clientForm">
         <label for="clientName">Nombre y Apellido:</label>
         <input type="text" id="clientName" required>
+        
         <label for="clientPhone">Número de WhatsApp:</label>
         <input type="tel" id="clientPhone" required>
+        
         <label for="clientDate">Seleccione un día:</label>
         <input type="date" id="clientDate" required>
+        
         <label for="cutType">Servicio:</label>
         <select id="cutType" required>
           <option value="">--Seleccione un servicio--</option>
@@ -305,8 +253,9 @@
           <option value="barba_aceite">Barba y aceite (Combo) ($220)</option>
           <option value="corte_barba_aceite">Corte, barba y aceite (Combo) ($320)</option>
         </select>
+        
         <fieldset>
-<legend>Productos disponibles:</legend>
+          <legend>Productos disponibles:</legend>
           <label for="product1"><input type="checkbox" id="product1" value="Cera"> Cera ($120)</label>
           <label for="product2"><input type="checkbox" id="product2" value="Aceite p/barba"> Aceite p/barba ($150)</label>
           <label for="product3"><input type="checkbox" id="product3" value="Monóxidil"> Monóxidil ($300)</label>
@@ -323,14 +272,14 @@
       <div id="clientMessage"></div>
       <button id="btnClientBack">Volver</button>
     </section>
-  
+    
     <!-- Sección de "Mis Citas" -->
     <section id="userAppointments" class="hidden">
       <h2>Mis Citas</h2>
       <div id="userAppointmentsContainer"></div>
       <button id="btnUserAppointmentsBack">Volver</button>
     </section>
-  
+    
     <!-- Sección de Login del Administrador -->
     <section id="adminLogin" class="hidden">
       <h2>Acceso Administrador</h2>
@@ -409,14 +358,71 @@
   </div>
   
   <script>
-    // --- Generación de un identificador único de dispositivo ---
+    /* ==============================
+       Funciones Auxiliares para Fechas (Horario Local)
+       ============================== */
+    function getLocalDateString(date) {
+      // Recibe un objeto Date (o convertible) y retorna "YYYY-MM-DD"
+      const d = date instanceof Date ? date : new Date(date);
+      const year = d.getFullYear();
+      const month = (d.getMonth() + 1).toString().padStart(2, "0");
+      const day = d.getDate().toString().padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    
+    function parseLocalDate(dateStr) {
+      // Convierte "YYYY-MM-DD" en objeto Date a medianoche, hora local
+      const [year, month, day] = dateStr.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+    
+    /* ==============================
+       Función para Generar Franjas según Intervalo
+       ============================== */
+    function generateTimeSlots(start, end, step = 30) {
+      const [startHour, startMin] = start.split(":").map(Number);
+      const [endHour, endMin] = end.split(":").map(Number);
+      const slots = [];
+      let totalMinutes = startHour * 60 + startMin;
+      const endTotal = endHour * 60 + endMin;
+      while(totalMinutes <= endTotal) {
+        let hour = Math.floor(totalMinutes / 60);
+        let minute = totalMinutes % 60;
+        let label = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+        slots.push(label);
+        totalMinutes += step;
+      }
+      return slots;
+    }
+    
+    // Franjas de servicio
+    const morningSlots = generateTimeSlots("09:30", "12:30", 30);
+    const afternoonSlots = generateTimeSlots("15:00", "19:30", 30);
+    const serviceSlots = morningSlots.concat(afternoonSlots);
+    
+    /* ==============================
+       Configuración Firebase y Datos Globales
+       ============================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyAuCecYVh9CiAlW6dWNrZuzuLq2DETtq1k",
+      authDomain: "ar-barber.firebaseapp.com",
+      projectId: "ar-barber",
+      storageBucket: "ar-barber.firebasestorage.app",
+      messagingSenderId: "663202339677",
+      appId: "1:663202339677:web:441b1abf0d0ff5034966b4",
+      measurementId: "G-3WBEMN22HX"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+    // Generar ID único de dispositivo
     let deviceId = localStorage.getItem("deviceId");
     if (!deviceId) {
       deviceId = "device_" + Math.random().toString(36).substr(2, 9);
       localStorage.setItem("deviceId", deviceId);
     }
-  
-    // Precios y credenciales
+    
+    // Precios y Credenciales
     const servicePrices = {
       "corte": 120,
       "barba": 100,
@@ -435,19 +441,20 @@
       "Gel c/tinte": 100
     };
     const adminCredentials = { user: "admin", pass: "admin123" };
-  
-    let appointments = []; // Actualizadas en tiempo real
-    let clientData = {};
-    let selectedHour = null;
-    let currentEditingIndex = null;
-  
-    // Función para obtener datos de bloqueo (sin cambios)
+    
+    let appointments = [];       // Se actualizará en tiempo real
+    let clientData = {};         // Datos al agendar cita
+    let selectedHour = null;     // Horario seleccionado en agendar cita
+    let currentEditingIndex = null; // Índice para editar cita
+    
+    /* ==============================
+       Función para Bloqueo y Mensajes
+       ============================== */
     async function getBlockedData() {
       const doc = await db.collection("blockedDevices").doc(deviceId).get();
       return doc.exists ? doc.data() : null;
     }
-  
-    // Mostrar mensaje de días restantes (sin cambios)
+    
     async function showRemainingDaysMessage() {
       const blockedData = await getBlockedData();
       if (blockedData) {
@@ -462,7 +469,7 @@
       }
       return "";
     }
-  
+    
     // Sincronización en tiempo real
     db.collection("appointments").onSnapshot((snapshot) => {
       appointments = [];
@@ -478,13 +485,12 @@
         renderUserAppointments();
       }
     });
-  
-    // Mostrar secciones
+    
     function showSection(sectionId) {
       document.querySelectorAll("section").forEach(sec => sec.classList.add("hidden"));
       document.getElementById(sectionId).classList.remove("hidden");
     }
-  
+    
     // Navegación
     document.getElementById("btnHome").addEventListener("click", () => showSection("home"));
     document.getElementById("btnClient").addEventListener("click", async () => {
@@ -504,8 +510,7 @@
       showSection("userAppointments");
     });
     document.getElementById("btnUserAppointmentsBack").addEventListener("click", () => showSection("home"));
-  
-    // Verificar si el dispositivo está bloqueado
+    
     async function isDeviceBlocked() {
       const doc = await db.collection("blockedDevices").doc(deviceId).get();
       if (doc.exists) {
@@ -517,19 +522,22 @@
       }
       return false;
     }
-  
-    // --- Renderizar franjas horarias para clientes usando serviceSlots ---
-    // Para Agendar Cita: se deshabilitan todos los slots si la fecha es pasada y, para el día actual, si la hora ya pasó o faltan menos de 15 minutos.
+    
+    /* ==============================
+       AGENDAR CITA: Renderizar Franjas Horarias
+       ============================== */
     function renderAvailableHours(date) {
       const container = document.getElementById("hoursContainer");
       container.innerHTML = "";
       const now = new Date();
-      const todayStr = new Date().toISOString().split("T")[0];
-      const selectedDateObj = new Date(date);
-      const todayObj = new Date(todayStr);
-  
-      serviceSlots.forEach(hour => {
-        const slotTime = new Date(date + "T" + hour);
+      const todayStr = getLocalDateString(new Date());
+      const selectedDateObj = parseLocalDate(date);
+      const todayObj = parseLocalDate(todayStr);
+    
+      serviceSlots.forEach((hour) => {
+        const [h, m] = hour.split(":").map(Number);
+        // Construimos slotTime usando la fecha local del día seleccionado
+        const slotTime = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), h, m, 0);
         const existsNormal = appointments.some(app => app.date === date && app.time === hour && !app.isBreak);
         const existsBreak = appointments.some(app => app.date === date && app.time === hour && app.isBreak === true);
         let disable = existsNormal || existsBreak;
@@ -538,17 +546,16 @@
         } else if (date === todayStr && (now > slotTime || now > new Date(slotTime.getTime() - 15 * 60 * 1000))) {
           disable = true;
         }
-  
         const btn = document.createElement("button");
-        btn.textContent = hour;
+        btn.textContent = disable ? hour + " (No disponible)" : hour;
         if (disable) {
           btn.disabled = true;
           btn.style.textDecoration = "line-through";
           btn.style.color = "gray";
         } else {
-          btn.addEventListener("click", function() {
+          btn.addEventListener("click", function () {
             const btns = container.querySelectorAll("button");
-            btns.forEach(b => b.classList.remove("selected"));
+            btns.forEach((b) => b.classList.remove("selected"));
             this.classList.add("selected");
             selectedHour = hour;
             document.getElementById("btnAcceptAppointment").disabled = false;
@@ -557,8 +564,7 @@
         container.appendChild(btn);
       });
     }
-  
-    // Agregar cita normal (cliente)
+    
     async function addAppointment(appointment) {
       try {
         await db.collection("appointments").add(appointment);
@@ -566,8 +572,8 @@
         console.error("Error agregando la cita:", error);
       }
     }
-  
-    document.getElementById("clientForm").addEventListener("submit", async function(e) {
+    
+    document.getElementById("clientForm").addEventListener("submit", async function (e) {
       e.preventDefault();
       if (await isDeviceBlocked()) {
         document.getElementById("clientMessage").textContent = "Este dispositivo está bloqueado de agendar citas. Contacta al administrador.";
@@ -577,7 +583,7 @@
       const date = document.getElementById("clientDate").value;
       const phone = document.getElementById("clientPhone").value;
       const cutType = document.getElementById("cutType").value;
-      const products = Array.from(document.querySelectorAll("#clientForm input[type=checkbox]:checked")).map(cb => cb.value);
+      const products = Array.from(document.querySelectorAll("#clientForm input[type=checkbox]:checked")).map((cb) => cb.value);
       if (!date) { document.getElementById("clientMessage").textContent = "Debe seleccionar una fecha."; return; }
       if (!cutType) { document.getElementById("clientMessage").textContent = "Debe seleccionar el servicio."; return; }
       clientData = { name, date, phone, selectedProducts: products, cutType };
@@ -586,19 +592,18 @@
       renderAvailableHours(date);
       document.getElementById("btnAcceptAppointment").disabled = true;
     });
-  
-    document.getElementById("btnAcceptAppointment").addEventListener("click", function() {
+    
+    document.getElementById("btnAcceptAppointment").addEventListener("click", function () {
       if (!selectedHour) return;
       reserveHour(clientData.name, clientData.date, selectedHour, clientData.selectedProducts, clientData.cutType, clientData.phone);
       document.getElementById("clientForm").reset();
       clientData = {};
       selectedHour = null;
     });
-  
-    // Función para reservar cita normal
+    
     function reserveHour(name, date, hour, products, cutType, phone) {
       let price = servicePrices[cutType] || 0;
-      products.forEach(p => { price += productPrices[p] || 0; });
+      products.forEach((p) => { price += productPrices[p] || 0; });
       const newAppointment = {
         name,
         date,
@@ -609,7 +614,7 @@
         monto: price,
         estatus: "Próximo corte",
         createdAt: new Date().toISOString(),
-        deviceId: deviceId
+        deviceId: deviceId,
       };
       addAppointment(newAppointment);
       document.getElementById("clientMessage").textContent =
@@ -617,28 +622,10 @@
       renderAvailableHours(date);
       setTimeout(() => showSection("home"), 10000);
     }
-  
-    // Login Admin
-    document.getElementById("loginForm").addEventListener("submit", function(e) {
-      e.preventDefault();
-      const user = document.getElementById("adminUser").value;
-      const pass = document.getElementById("adminPass").value;
-      if (user === adminCredentials.user && pass === adminCredentials.pass) {
-        showSection("adminPanel");
-        renderAdminPanel();
-      } else {
-        document.getElementById("loginMessage").textContent = "Usuario o contraseña incorrectos.";
-      }
-    });
-  
-    document.getElementById("btnAdminExit").addEventListener("click", () => {
-      document.getElementById("adminUser").value = "";
-      document.getElementById("adminPass").value = "";
-      document.getElementById("loginMessage").textContent = "";
-      showSection("home");
-    });
-  
-    // Crear elemento para "Mis Citas" (excluyendo descansos)
+    
+    /* ==============================
+       MIS CITAS
+       ============================== */
     function createUserAppointmentElement(app) {
       if (app.isBreak) return;
       const container = document.createElement("div");
@@ -659,18 +646,17 @@
                              <p><strong>Estatus:</strong> ${app.estatus}</p>`;
       const apptTime = new Date(app.date + "T" + app.time);
       const diffHours = (apptTime - new Date()) / (3600 * 1000);
-      if (diffHours < 2) {
-        // Si faltan menos de 2 hrs, deshabilitar edición y cancelación.
+      if (diffHours < 2 || app.estatus === "Vino" || app.estatus === "No vino") {
         const btnEdit = document.createElement("button");
         btnEdit.innerHTML = '<i class="fas fa-pencil-alt"></i> Editar cita';
         btnEdit.disabled = true;
-        btnEdit.title = "No se puede editar menos de 2 horas antes.";
+        btnEdit.title = "No se puede editar esta cita.";
         container.appendChild(btnEdit);
-  
+    
         const btnCancel = document.createElement("button");
         btnCancel.innerHTML = '<i class="fas fa-times"></i> Cancelar cita';
         btnCancel.disabled = true;
-        btnCancel.title = "No se puede cancelar menos de 2 horas antes.";
+        btnCancel.title = "No se puede cancelar esta cita.";
         btnCancel.style.marginLeft = "5px";
         container.appendChild(btnCancel);
       } else {
@@ -678,7 +664,7 @@
         btnEdit.innerHTML = '<i class="fas fa-pencil-alt"></i> Editar cita';
         btnEdit.addEventListener("click", () => openEditModalForClient(app));
         container.appendChild(btnEdit);
-  
+    
         const btnCancel = document.createElement("button");
         btnCancel.innerHTML = '<i class="fas fa-times"></i> Cancelar cita';
         btnCancel.style.marginLeft = "5px";
@@ -709,7 +695,18 @@
       });
     }
     
-    // Funciones para Modal de Edición
+    function cancelClientAppointment(app) {
+      if (confirm("¿Desea cancelar esta cita?")) {
+        db.collection("appointments").doc(app.id).update({
+          estatus: "Cita cancelada por el cliente",
+          canceledAt: new Date().toISOString()
+        });
+      }
+    }
+    
+    /* ==============================
+       Modal de Edición y Funciones para Editar Citas
+       ============================== */
     function updateEditTimeOptions(selectedDate, currentTimeSelection) {
       const selectEl = document.getElementById("editTime");
       selectEl.innerHTML = "";
@@ -736,13 +733,14 @@
           opt.textContent = hour + " (No disponible)";
         } else if (isBooked) {
           opt.disabled = true;
+          opt.textContent = hour + " (Ya reservado)";
         } else if (hour === currentTimeSelection) {
           opt.selected = true;
         }
         selectEl.appendChild(opt);
       });
     }
-  
+    
     function openEditModalForClient(app) {
       currentEditingIndex = appointments.findIndex(a => a.id === app.id);
       document.getElementById("editDate").value = app.date;
@@ -761,7 +759,7 @@
       });
       document.getElementById("editModal").style.display = "flex";
     }
-  
+    
     document.getElementById("saveChanges").addEventListener("click", async function() {
       let updatedDate = document.getElementById("editDate").value;
       let updatedTime = document.getElementById("editTime").value;
@@ -788,7 +786,28 @@
       document.getElementById("editModal").style.display = "none";
     });
     
-    // --- Lógicas para el Administrador ---
+    /* ==============================
+       Sección: Administración
+       ============================== */
+    document.getElementById("loginForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const user = document.getElementById("adminUser").value.trim();
+      const pass = document.getElementById("adminPass").value.trim();
+      if (user === adminCredentials.user && pass === adminCredentials.pass) {
+        showSection("adminPanel");
+        renderAdminPanel();
+      } else {
+        document.getElementById("loginMessage").textContent = "Usuario o contraseña incorrectos.";
+      }
+    });
+    
+    document.getElementById("btnAdminExit").addEventListener("click", () => {
+      document.getElementById("adminUser").value = "";
+      document.getElementById("adminPass").value = "";
+      document.getElementById("loginMessage").textContent = "";
+      showSection("home");
+    });
+    
     function renderAdminPanel() {
       const container = document.getElementById("adminContainer");
       container.innerHTML = "";
@@ -808,11 +827,13 @@
         `;
         const apptTime = new Date(app.date + "T" + app.time);
         const diffHours = (apptTime - new Date()) / (3600 * 1000);
+        const disableButtons = diffHours < 2 || app.estatus === "Vino" || app.estatus === "No vino";
+        
         const btnEdit = document.createElement("button");
         btnEdit.innerHTML = '<i class="fas fa-pencil-alt"></i> Editar cita';
-        if (diffHours < 2) {
+        if (disableButtons) {
           btnEdit.disabled = true;
-          btnEdit.title = "No se puede editar menos de 2 horas antes.";
+          btnEdit.title = "No se puede editar esta cita.";
         } else {
           btnEdit.addEventListener("click", () => openEditModalForClient(app));
         }
@@ -821,9 +842,9 @@
         const btnCancel = document.createElement("button");
         btnCancel.innerHTML = '<i class="fas fa-ban"></i> Cancelar cita';
         btnCancel.style.background = "#FF0000";
-        if (diffHours < 2) {
+        if (disableButtons) {
           btnCancel.disabled = true;
-          btnCancel.title = "No se puede cancelar menos de 2 horas antes.";
+          btnCancel.title = "No se puede cancelar esta cita.";
         } else {
           btnCancel.addEventListener("click", async () => {
             await db.collection("appointments").doc(app.id).update({
@@ -864,7 +885,7 @@
     
     async function checkAndBlockDevice(deviceId) {
       let count = appointments.filter(app => app.deviceId === deviceId && !app.isBreak &&
-                      (app.estatus === "No vino" || app.estatus === "Cita cancelada por el administrador")).length;
+                          (app.estatus === "No vino" || app.estatus === "Cita cancelada por el administrador")).length;
       if (count >= 3) {
         const blockRef = db.collection("blockedDevices").doc(deviceId);
         const doc = await blockRef.get();
@@ -924,7 +945,9 @@
       });
     }
     
-    // --- Sección para programar descanso (Admin) ---
+    /* ==============================
+       Sección: Programar Descansos (Admin)
+       ============================== */
     document.getElementById("btnTomarDescanso").addEventListener("click", () => showSection("adminBreakSection"));
     
     document.getElementById("adminBreakDate").addEventListener("change", function() {
@@ -937,29 +960,27 @@
       }
     });
     
-    // En el área de descansos se aplican las mismas validaciones: si la fecha es pasada o para el día actual si la hora ya pasó o faltan menos de 15 minutos, se deshabilitan esas franjas.
     function renderBreakAvailableHours(date) {
       const container = document.getElementById("breakHoursContainer");
       container.innerHTML = "";
       const now = new Date();
-      const todayStr = new Date().toISOString().split("T")[0];
-      const selectedDateObj = new Date(date);
-      const todayObj = new Date(todayStr);
+      const todayStr = getLocalDateString(new Date());
+      const selectedDateObj = parseLocalDate(date);
+      const todayObj = parseLocalDate(todayStr);
       const slots = generateTimeSlots("09:30", "12:30", 30).concat(generateTimeSlots("15:00", "19:30", 30));
       
       slots.forEach(hour => {
-        const slotTime = new Date(date + "T" + hour);
-        // Revisar cita normal (sin filtrar por dispositivo)
+        const [h, m] = hour.split(":").map(Number);
+        const slotTime = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), h, m, 0);
         const normalApp = appointments.find(app => app.date === date && app.time === hour && !app.isBreak);
-        // Revisar descanso (sin filtrar por dispositivo)
         const breakApp = appointments.find(app => app.date === date && app.time === hour && app.isBreak === true);
-      
+        
         if (selectedDateObj < todayObj || (date === todayStr && (now > slotTime || now > new Date(slotTime.getTime() - 15 * 60 * 1000)))) {
           const btn = document.createElement("button");
           btn.disabled = true;
           btn.style.textDecoration = "line-through";
           btn.style.color = "gray";
-          btn.textContent = hour;
+          btn.textContent = hour + " (No disponible)";
           container.appendChild(btn);
         } else {
           if (normalApp) {
@@ -967,7 +988,7 @@
             btn.disabled = true;
             btn.style.textDecoration = "line-through";
             btn.style.color = "gray";
-            btn.textContent = hour;
+            btn.textContent = hour + " (No disponible)";
             container.appendChild(btn);
           } else {
             if (breakApp) {
@@ -1013,7 +1034,9 @@
     
     document.getElementById("btnAdminBreakBack").addEventListener("click", () => showSection("adminPanel"));
     
-    // --- Evento para reporte ---
+    /* ==============================
+       Evento para reporte
+       ============================== */
     document.getElementById("btnVisitCount").addEventListener("click", async () => {
       const todayStr = new Date().toISOString().split("T")[0];
       const todaysApps = appointments.filter(app => app.date === todayStr);
@@ -1073,45 +1096,6 @@
       html += `<h2>Citas Canceladas</h2>`;
       if (canceled.length > 0) {
         html += `<table><tr><th>Cliente</th><th>Teléfono</th><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Productos</th><th>Estado</th></tr>`;
-        canceled.forEach(app => {
-          html += `<tr>
-                     <td>${app.name}</td>
-                     <td>${app.phone || ""}</td>
-                     <td>${app.date}</td>
-                     <td>${app.time}</td>
-                     <td>${app.cutType}</td>
-                     <td>${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</td>
-                     <td>${app.estatus}</td>
-                   </tr>`;
-        });
-        html += `</table>`;
-      } else { 
-        html += "<p>No hay citas canceladas hoy.</p>";
-      }
-      
-      html += `<h2>Citas Asistidas</h2>`;
-      if (attended.length > 0) {
-        html += `<table><tr><th>Cliente</th><th>Teléfono</th><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Productos</th><th>Monto</th></tr>`;
-        attended.forEach(app => {
-          html += `<tr>
-                     <td>${app.name}</td>
-                     <td>${app.phone || ""}</td>
-                     <td>${app.date}</td>
-                     <td>${app.time}</td>
-                     <td>${app.cutType}</td>
-                     <td>${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</td>
-                     <td>$${app.monto}</td>
-                   </tr>`;
-        });
-        html += `</table>`;
-        html += `<h3>Total dinero en citas asistidas: $${totalAttendedMoney}</h3>`;
-      } else { 
-        html += "<p>No hay citas asistidas hoy.</p>";
-      }
-      
-      html += `<h2>Citas No Asistieron</h2>`;
-      if (noShow.length > 0) {
-        html += `<table><tr><th>Cliente</th><th>Teléfono</th><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Productos</th><th>Estado</th></tr>`;
         noShow.forEach(app => {
           html += `<tr>
                      <td>${app.name}</td>
@@ -1138,7 +1122,7 @@
       alert("Utiliza el botón 'Tomar Descanso' para bloquear horas.");
     });
     
-    // Botones en el modal para cerrar, guardar y eliminar (funciones de placeholder)
+    // Botones del Modal para Cerrar, Guardar y Eliminar (Placeholder)
     document.getElementById("closeEditModal").addEventListener("click", () => {
       document.getElementById("editModal").style.display = "none";
     });
