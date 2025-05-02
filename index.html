@@ -190,7 +190,7 @@
       box-shadow: 0 4px 8px rgba(0,0,0,0.8);
     }
     .modal-buttons button { margin-right: 10px; }
-    /* Agregado: tachado para opciones deshabilitadas en el select de editar cita */
+    /* (Manteniendo la regla anterior para opciones deshabilitadas si se usara select) */
     select#editTime option:disabled {
       text-decoration: line-through;
       color: gray;
@@ -318,16 +318,15 @@
   </div>
   
   <!-- Modal para Modificar Cita (Administrador/Cliente) -->
+  <!-- Se elimina la posibilidad de modificar la fecha y la hora, dejándolas de solo lectura -->
   <div id="editModal" class="hidden">
     <div class="modal-content">
       <h2>Modificar Cita</h2>
       <form id="editForm">
         <label for="editDate">Fecha:</label>
-        <input type="date" id="editDate" required>
+        <input type="date" id="editDate" readonly required>
         <label for="editTime">Hora:</label>
-        <select id="editTime" required>
-          <option value="">--Seleccione la hora--</option>
-        </select>
+        <input type="text" id="editTime" readonly required>
         <label for="editCutType">Servicio:</label>
         <select id="editCutType" required>
           <option value="">--Seleccione un servicio--</option>
@@ -707,44 +706,11 @@
     /* ==============================
        Modal de Edición y Funciones para Editar Citas
        ============================== */
-    function updateEditTimeOptions(selectedDate, currentTimeSelection) {
-      const selectEl = document.getElementById("editTime");
-      selectEl.innerHTML = "";
-      const todayStr = new Date().toISOString().split("T")[0];
-      const selectedDateObj = new Date(selectedDate);
-      const todayObj = new Date(todayStr);
-      
-      serviceSlots.forEach(hour => {
-        let isBooked = appointments.some((app, index) => {
-          if (index === currentEditingIndex) return false;
-          return app.date === selectedDate && app.time === hour &&
-                 app.estatus !== "Cita cancelada por el administrador" &&
-                 app.estatus !== "Cita cancelada por el cliente";
-        });
-        const opt = document.createElement("option");
-        opt.value = hour;
-        opt.textContent = hour;
-        const slotTime = new Date(selectedDate + "T" + hour);
-        if (selectedDateObj < todayObj) {
-          opt.disabled = true;
-          opt.textContent = hour + " (No disponible)";
-        } else if (selectedDate === todayStr && new Date() > new Date(slotTime.getTime() - 15 * 60 * 1000)) {
-          opt.disabled = true;
-          opt.textContent = hour + " (No disponible)";
-        } else if (isBooked) {
-          opt.disabled = true;
-          opt.textContent = hour + " (Ya reservado)";
-        } else if (hour === currentTimeSelection) {
-          opt.selected = true;
-        }
-        selectEl.appendChild(opt);
-      });
-    }
-    
+    // Aqui se elimina la posibilidad de modificar la hora y la fecha; se toman los datos existentes
     function openEditModalForClient(app) {
       currentEditingIndex = appointments.findIndex(a => a.id === app.id);
       document.getElementById("editDate").value = app.date;
-      updateEditTimeOptions(app.date, app.time);
+      document.getElementById("editTime").value = app.time;
       document.getElementById("editCutType").value = app.cutType;
       // Reiniciar los checkbox y marcar los productos previamente seleccionados
       ["editProduct1", "editProduct2", "editProduct3", "editProduct4", "editProduct5"].forEach(id => {
@@ -761,11 +727,10 @@
     }
     
     document.getElementById("saveChanges").addEventListener("click", async function() {
-      let updatedDate = document.getElementById("editDate").value;
-      let updatedTime = document.getElementById("editTime").value;
+      // Solo se actualizan el servicio y los productos, ya que la fecha y hora no se pueden modificar
       let updatedCutType = document.getElementById("editCutType").value;
       let updatedProducts = Array.from(document.querySelectorAll("#editForm input[type=checkbox]:checked")).map(cb => cb.value);
-      const updateObj = { date: updatedDate, time: updatedTime, cutType: updatedCutType, products: updatedProducts };
+      const updateObj = { cutType: updatedCutType, products: updatedProducts };
       let app = appointments[currentEditingIndex];
       await db.collection("appointments").doc(app.id).update(updateObj);
       document.getElementById("editModal").style.display = "none";
