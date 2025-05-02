@@ -300,7 +300,7 @@
       <div id="adminContainer"></div>
       <button id="btnTomarDescanso">Tomar Descanso</button>
       <div id="totalCorte"></div>
-      <button id="btnVisitCount">Ver Conteo de Visitas</button>
+      <button id="btnVisitCount">Excel</button>
       <button id="btnAdminExit">Cerrar sesión</button>
     </section>
     
@@ -1060,105 +1060,89 @@
        Evento para reporte
       
        ============================== */
-    document.getElementById("btnVisitCount").addEventListener("click", async () => {
-      const todayStr = new Date().toISOString().split("T")[0];
-      const todaysApps = appointments.filter(app => app.date === todayStr);
-      const canceled = todaysApps.filter(app => app.estatus === "Cita cancelada por el administrador" || app.estatus === "Cita cancelada por el cliente");
-      const attended = todaysApps.filter(app => app.estatus === "Vino" || app.estatus === "Corte Terminado");
-      const noShow = todaysApps.filter(app => app.estatus === "No vino" || app.estatus === "Corte no realizado");
-      const totalAttendedMoney = attended.reduce((sum, app) => sum + (parseFloat(app.monto) || 0), 0);
-      const report = {
-        date: todayStr,
-        canceled: canceled.map(app => ({
-          name: app.name,
-          phone: app.phone,
-          date: app.date,
-          time: app.time,
-          service: app.cutType,
-          products: app.products,
-          status: app.estatus,
-          canceledAt: app.canceledAt || null
-        })),
-        attended: attended.map(app => ({
-          name: app.name,
-          phone: app.phone,
-          date: app.date,
-          time: app.time,
-          service: app.cutType,
-          products: app.products,
-          monto: app.monto,
-          status: app.estatus
-        })),
-        noShow: noShow.map(app => ({
-          name: app.name,
-          phone: app.phone,
-          date: app.date,
-          time: app.time,
-          service: app.cutType,
-          products: app.products,
-          status: app.estatus
-        })),
-        totalAttendedMoney: totalAttendedMoney,
-        createdAt: new Date().toISOString()
+  document.getElementById("btnVisitCount").addEventListener("click", async () => {
+  // Filtrar solo las citas atendidas (consideramos "Vino" o "Corte Terminado" como cortes efectivos)
+  const attendedApps = appointments.filter(
+    app => app.estatus === "Vino" || app.estatus === "Corte Terminado"
+  );
+
+  // Agrupar las citas por día y calcular separadamente los totales de dinero en cortes y en productos.
+  const dataByDate = {};
+  attendedApps.forEach(app => {
+    const date = app.date;
+    if (!dataByDate[date]) {
+      dataByDate[date] = {
+        totalCortes: 0,
+        totalDineroCortes: 0,
+        totalDineroProductos: 0,
+        productos: {},   // Aquí se guardará el conteo de cada producto.
+        totalProductos: 0
       };
-      try {
-        await db.collection("reports").add(report);
-        console.log("Reporte guardado permanentemente.");
-      } catch (error) {
-        console.error("Error al guardar el reporte:", error);
-      }
-      let html = `<html><head><title>Reporte de Inventario - ${todayStr}</title>
-                   <style>
-                     body { font-family: "Times New Roman", serif; background: #fff; color: #000; padding: 20px; }
-                     table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-                     th, td { border: 1px solid #000; padding: 8px; text-align: left; }
-                     th { background: #D4AF37; }
-                     h2 { margin-top: 40px; }
-                   </style></head><body>`;
-      html += `<h1>Reporte de Inventario - ${todayStr}</h1>`;
-      html += `<h2>Citas Canceladas</h2>`;
-      if (canceled.length > 0) {
-        html += `<table><tr><th>Cliente</th><th>Teléfono</th><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Productos</th><th>Estado</th></tr>`;
-        noShow.forEach(app => {
-          html += `<tr>
-                     <td>${app.name}</td>
-                     <td>${app.phone || ""}</td>
-                     <td>${app.date}</td>
-                     <td>${app.time}</td>
-                     <td>${app.cutType}</td>
-                     <td>${(app.products && app.products.length > 0) ? app.products.join(", ") : "Ninguno"}</td>
-                     <td>${app.estatus}</td>
-                   </tr>`;
-        });
-        html += `</table>`;
-      } else { 
-        html += "<p>No hay citas que no asistieron hoy.</p>";
-      }
-      
-      html += "</body></html>";
-      let reportWin = window.open("", "_blank");
-      reportWin.document.write(html);
-      reportWin.document.close();
+    }
+
+    // Obtener el precio del servicio y el de los productos usando los valores de servicePrices y productPrices.
+    const servicePrice = servicePrices[app.cutType] || 0;
+    const productPrice = app.products && Array.isArray(app.products)
+      ? app.products.reduce((sum, p) => sum + (productPrices[p] || 0), 0)
+      : 0;
+
+    dataByDate[date].totalCortes += 1;
+    dataByDate[date].totalDineroCortes += servicePrice;
+    dataByDate[date].totalDineroProductos += productPrice;
+
+    // Contar cada producto individualmente.
+    if (app.products && Array.isArray(app.products)) {
+      app.products.forEach(product => {
+        dataByDate[date].productos[product] = (dataByDate[date].productos[product] || 0) + 1;
+        dataByDate[date].totalProductos += 1;
+      });
+    }
+  });
+
+  // Generar el HTML del reporte EXEL sin estilos adicionales.
+  let html = `<html>
+    <head>
+      <title>Reporte EXEL - Días Trabajados</title>
+    </head>
+    <body>
+      <h1>Reporte EXEL - Días Trabajados</h1>`;
+
+  // Ordenar las fechas de forma ascendente y generar la tabla para cada día.
+  Object.keys(dataByDate).sort().forEach(date => {
+    const dayData = dataByDate[date];
+
+    // Generar el detalle de productos (nombre y cantidad).
+    let detalleProductos = "";
+    Object.keys(dayData.productos).forEach(prod => {
+      detalleProductos += `${prod}: ${dayData.productos[prod]}<br>`;
     });
-    
-    document.getElementById("btnFinalizarCorte") && document.getElementById("btnFinalizarCorte").addEventListener("click", async () => {
-      alert("Utiliza el botón 'Tomar Descanso' para bloquear horas.");
-    });
-    
-    // Botones del Modal para Cerrar, Guardar y Eliminar (Placeholder)
-    document.getElementById("closeEditModal").addEventListener("click", () => {
-      document.getElementById("editModal").style.display = "none";
-    });
-    
-    document.getElementById("saveChanges").addEventListener("click", () => {
-      alert("Cambios guardados (Función a implementar).");
-      document.getElementById("editModal").style.display = "none";
-    });
-    
-    document.getElementById("deleteAppointment").addEventListener("click", () => {
-      alert("Cita eliminada (Función a implementar).");
-      document.getElementById("editModal").style.display = "none";
-    });
+    detalleProductos = detalleProductos ? detalleProductos : "Ninguno";
+
+    html += `<h2>${date}</h2>
+      <table border="1" cellspacing="0" cellpadding="5">
+        <tr>
+          <th>Total Cortes</th>
+          <th>Dinero en Cortes</th>
+          <th>Dinero en Productos</th>
+          <th>Total Productos</th>
+        </tr>
+        <tr>
+          <td>${dayData.totalCortes}</td>
+          <td>$${dayData.totalDineroCortes.toFixed(2)}</td>
+          <td>$${dayData.totalDineroProductos.toFixed(2)}</td>
+          <td>${dayData.totalProductos}</td>
+        </tr>
+      </table>
+      <p><strong>Detalle de Productos:</strong><br>${detalleProductos}</p>`;
+  });
+
+  html += `</body></html>`;
+
+  // Abrir la ventana del reporte y escribir el HTML generado.
+  let reportWin = window.open("", "_blank");
+  reportWin.document.write(html);
+  reportWin.document.close();
+});
   </script>
 </body>
 </html>
