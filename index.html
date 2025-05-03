@@ -11,6 +11,8 @@
   <!-- Firebase (versión compat para la forma clásica) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+  <!-- SheetJS para exportación a Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
   <style>
     /* Estilos generales, header, formularios y secciones */
@@ -115,9 +117,10 @@
       transition: background 0.3s;
     }
     .hours-container button.selected {
-      background: #D4AF37;
-      color: #121212;
-    }
+  background: #444 !important;
+  border: 2px solid #fff !important;
+}
+
     .hours-container button[disabled] {
       text-decoration: line-through;
       color: gray;
@@ -190,10 +193,24 @@
       box-shadow: 0 4px 8px rgba(0,0,0,0.8);
     }
     .modal-buttons button { margin-right: 10px; }
-    /* Si el navegador permite estilado en opciones, se mantiene (aunque muchos navegadores limitan el estilado de <option>) */
     select#editTime option:disabled {
       text-decoration: line-through;
       color: gray;
+    }
+    
+    /* ==============================
+       Estilos para botones en el área de administración (todos en tonos grises)
+       ============================== */
+    #adminPanel button, 
+    #adminBreakSection button, 
+    #blockedUsersContainer button {
+      background-color: gray !important;
+      color: #fff !important;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      margin: 5px;
     }
   </style>
 </head>
@@ -312,6 +329,8 @@
       <div id="breakHoursSection" class="hidden">
         <h3>Horas disponibles para <span id="adminBreakSelectedDate"></span>:</h3>
         <div class="hours-container" id="breakHoursContainer"></div>
+        <!-- Botón para confirmar múltiples descansos -->
+        <button id="confirmBreaksBtn">Confirmar Descansos</button>
       </div>
       <button id="btnAdminBreakBack">Volver</button>
     </section>
@@ -351,7 +370,7 @@
         </fieldset>
         <div class="modal-buttons">
           <button type="button" id="saveChanges"><i class="fas fa-save"></i> Guardar cambios</button>
-          <button type="button" id="deleteAppointment" style="background:#FF0000;"><i class="fas fa-times"></i> Cancelar cita</button>
+          <button type="button" id="deleteAppointment">Cancelar cita</button>
         </div>
         <button type="button" id="closeEditModal" style="margin-top:10px;">Cerrar</button>
       </form>
@@ -363,7 +382,6 @@
        Funciones Auxiliares para Fechas (Horario Local)
        ============================== */
     function getLocalDateString(date) {
-      // Recibe un objeto Date (o convertible) y retorna "YYYY-MM-DD"
       const d = date instanceof Date ? date : new Date(date);
       const year = d.getFullYear();
       const month = (d.getMonth() + 1).toString().padStart(2, "0");
@@ -372,7 +390,6 @@
     }
     
     function parseLocalDate(dateStr) {
-      // Convierte "YYYY-MM-DD" en objeto Date a medianoche, hora local
       const [year, month, day] = dateStr.split("-").map(Number);
       return new Date(year, month - 1, day);
     }
@@ -447,6 +464,9 @@
     let clientData = {};         // Datos al agendar cita
     let selectedHour = null;     // Horario seleccionado en agendar cita
     let currentEditingIndex = null; // Índice para editar cita
+    
+    // Variable para almacenar múltiples franjas de descanso seleccionadas
+    let selectedBreakSlots = [];
     
     /* ==============================
        Función para Bloqueo y Mensajes
@@ -537,7 +557,6 @@
     
       serviceSlots.forEach((hour) => {
         const [h, m] = hour.split(":").map(Number);
-        // Construimos slotTime usando la fecha local del día seleccionado
         const slotTime = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), h, m, 0);
         const existsNormal = appointments.some(app => app.date === date && app.time === hour && !app.isBreak);
         const existsBreak = appointments.some(app => app.date === date && app.time === hour && app.isBreak === true);
@@ -715,12 +734,9 @@
     /* ==============================
        Modal de Edición y Funciones para Editar Citas
        ============================== */
-    // En este modal, el cliente podrá modificar tanto la fecha como la hora.
-    // Se agrega la función updateEditTimeOptions para que al cambiar la fecha se actualicen las horas disponibles.
     function updateEditTimeOptions(selectedDate, currentTimeSelection) {
       const selectEl = document.getElementById("editTime");
       selectEl.innerHTML = "<option value=''>--Seleccione la hora--</option>";
-      // Se obtiene la fecha local actual
       const todayStr = getLocalDateString(new Date());
       const selectedDateObj = new Date(selectedDate);
       const todayObj = parseLocalDate(todayStr);
@@ -734,7 +750,7 @@
         });
         const opt = document.createElement("option");
         opt.value = hour;
-        let optionText = hour; // texto base
+        let optionText = hour;
         const slotTime = new Date(selectedDate + "T" + hour);
         if (selectedDateObj < todayObj) {
           opt.disabled = true;
@@ -758,7 +774,6 @@
       });
     }
     
-    // Si el cliente cambia la fecha en el modal, se actualizan las horas disponibles.
     document.getElementById("editDate").addEventListener("change", function() {
       updateEditTimeOptions(this.value, null);
     });
@@ -768,7 +783,6 @@
       document.getElementById("editDate").value = app.date;
       updateEditTimeOptions(app.date, app.time);
       document.getElementById("editCutType").value = app.cutType;
-      // Reiniciar los checkbox y marcar los productos previamente seleccionados
       ["editProduct1", "editProduct2", "editProduct3", "editProduct4", "editProduct5"].forEach(id => {
         document.getElementById(id).checked = false;
       });
@@ -863,7 +877,8 @@
         
         const btnCancel = document.createElement("button");
         btnCancel.innerHTML = '<i class="fas fa-ban"></i> Cancelar cita';
-        btnCancel.style.background = "#FF0000";
+        btnCancel.style.marginLeft = "5px";
+        btnCancel.style.background = "gray";
         if (disableButtons) {
           btnCancel.disabled = true;
           btnCancel.title = "No se puede cancelar esta cita.";
@@ -891,7 +906,7 @@
         
         const btnNoVino = document.createElement("button");
         btnNoVino.innerHTML = '<i class="fas fa-times-circle"></i> No vino';
-        btnNoVino.style.background = "#FF0000";
+        btnNoVino.style.background = "gray";
         btnNoVino.addEventListener("click", async () => {
           await db.collection("appointments").doc(app.id).update({ estatus: "No vino" });
           alert("Cita marcada como 'No vino'.");
@@ -952,11 +967,7 @@
         }
         const btn = document.createElement("button");
         btn.textContent = "Desbloquear";
-        btn.style.backgroundColor = "#4CAF50";
-        btn.style.border = "none";
-        btn.style.padding = "5px 10px";
-        btn.style.borderRadius = "3px";
-        btn.style.color = "#fff";
+        btn.style.backgroundColor = "gray";
         btn.addEventListener("click", async () => {
           await db.collection("blockedDevices").doc(data.deviceId).update({ unblockedAt: new Date().toISOString() });
           alert("Usuario desbloqueado. Podrá agendar citas después de 10 días.");
@@ -968,12 +979,13 @@
     }
     
     /* ==============================
-       Sección: Programar Descansos (Admin)
+       Sección: Programar Descansos (Admin) - Mejorado para múltiples descansos
        ============================== */
     document.getElementById("btnTomarDescanso").addEventListener("click", () => showSection("adminBreakSection"));
     
     document.getElementById("adminBreakDate").addEventListener("change", function() {
       const date = this.value;
+      selectedBreakSlots = []; // Reset de selección cuando cambia la fecha
       if (date) {
         document.getElementById("adminBreakSelectedDate").textContent = date;
         renderBreakAvailableHours(date);
@@ -996,153 +1008,154 @@
         const slotTime = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), h, m, 0);
         const normalApp = appointments.find(app => app.date === date && app.time === hour && !app.isBreak);
         const breakApp = appointments.find(app => app.date === date && app.time === hour && app.isBreak === true);
+        let btn = document.createElement("button");
         
+        // Determinar si el slot ya pasó o está inválido
         if (selectedDateObj < todayObj || (date === todayStr && (now > slotTime || now > new Date(slotTime.getTime() - 15 * 60 * 1000)))) {
-          const btn = document.createElement("button");
           btn.disabled = true;
           btn.style.textDecoration = "line-through";
           btn.style.color = "gray";
           btn.textContent = hour + " (No disponible)";
-          container.appendChild(btn);
-        } else {
-          if (normalApp) {
-            const btn = document.createElement("button");
-            btn.disabled = true;
-            btn.style.textDecoration = "line-through";
-            btn.style.color = "gray";
-            btn.textContent = hour + " (No disponible)";
-            container.appendChild(btn);
-          } else {
-            if (breakApp) {
-              const btn = document.createElement("button");
-              btn.textContent = hour + " - Bloqueado";
-              btn.style.backgroundColor = "#FF0000";
-              btn.addEventListener("click", async () => {
-                if (confirm("¿Desea cancelar el descanso programado para " + hour + " del " + date + "?")) {
-                  await db.collection("appointments").doc(breakApp.id).delete();
-                  alert("Descanso cancelado, la hora ha sido habilitada.");
-                  renderBreakAvailableHours(date);
-                }
-              });
-              container.appendChild(btn);
-            } else {
-              const btn = document.createElement("button");
-              btn.textContent = hour;
-              btn.addEventListener("click", () => {
-                const newBreak = {
-                  name: "Descanso",
-                  date: date,
-                  time: hour,
-                  products: [],
-                  cutType: "Descanso",
-                  phone: "",
-                  monto: 0,
-                  estatus: "Descanso",
-                  isBreak: true,
-                  createdAt: new Date().toISOString(),
-                  deviceId: deviceId
-                };
-                addAppointment(newBreak);
-                alert(`Descanso programado para el ${date} a las ${hour}.`);
-                renderBreakAvailableHours(date);
-              });
-              container.appendChild(btn);
+        } else if (normalApp) {
+          btn.disabled = true;
+          btn.style.textDecoration = "line-through";
+          btn.style.color = "gray";
+          btn.textContent = hour + " (No disponible)";
+        } else if (breakApp) {
+          // Si ya hay un descanso programado en ese slot, el botón permitirá cancelarlo
+          btn.textContent = hour + " - Bloqueado";
+          btn.addEventListener("click", async () => {
+            if (confirm("¿Desea cancelar el descanso programado para " + hour + " del " + date + "?")) {
+              await db.collection("appointments").doc(breakApp.id).delete();
+              alert("Descanso cancelado, la hora ha sido habilitada.");
+              renderBreakAvailableHours(date);
             }
+          });
+        } else {
+          // Slot disponible para selección múltiple
+          btn.textContent = hour;
+          // Si ya está seleccionado, lo marcamos visualmente
+          if (selectedBreakSlots.includes(hour)) {
+            btn.classList.add("selected");
           }
+          btn.addEventListener("click", function() {
+            if (selectedBreakSlots.includes(hour)) {
+              // Des-seleccionar
+              selectedBreakSlots = selectedBreakSlots.filter(item => item !== hour);
+              this.classList.remove("selected");
+            } else {
+              // Seleccionar
+              selectedBreakSlots.push(hour);
+              this.classList.add("selected");
+            }
+          });
         }
+        container.appendChild(btn);
       });
       document.getElementById("breakHoursSection").classList.remove("hidden");
     }
     
+    // Confirmar múltiples descansos seleccionados
+    document.getElementById("confirmBreaksBtn").addEventListener("click", () => {
+      const date = document.getElementById("adminBreakDate").value;
+      if (!date) {
+        alert("Por favor seleccione una fecha.");
+        return;
+      }
+      if (selectedBreakSlots.length === 0) {
+        alert("No ha seleccionado ninguna franja horaria.");
+        return;
+      }
+      selectedBreakSlots.forEach(hour => {
+        const newBreak = {
+          name: "Descanso",
+          date: date,
+          time: hour,
+          products: [],
+          cutType: "Descanso",
+          phone: "",
+          monto: 0,
+          estatus: "Descanso",
+          isBreak: true,
+          createdAt: new Date().toISOString(),
+          deviceId: deviceId
+        };
+        addAppointment(newBreak);
+      });
+      alert(`Se han programado ${selectedBreakSlots.length} descansos para el ${date}.`);
+      selectedBreakSlots = [];
+      renderBreakAvailableHours(date);
+    });
+    
     document.getElementById("btnAdminBreakBack").addEventListener("click", () => showSection("adminPanel"));
     
     /* ==============================
-       Evento para reporte
-      
+       Exportación a Excel usando SheetJS
        ============================== */
-  document.getElementById("btnVisitCount").addEventListener("click", async () => {
-  // Filtrar solo las citas atendidas (consideramos "Vino" o "Corte Terminado" como cortes efectivos)
-  const attendedApps = appointments.filter(
-    app => app.estatus === "Vino" || app.estatus === "Corte Terminado"
-  );
-
-  // Agrupar las citas por día y calcular separadamente los totales de dinero en cortes y en productos.
-  const dataByDate = {};
-  attendedApps.forEach(app => {
-    const date = app.date;
-    if (!dataByDate[date]) {
-      dataByDate[date] = {
-        totalCortes: 0,
-        totalDineroCortes: 0,
-        totalDineroProductos: 0,
-        productos: {},   // Aquí se guardará el conteo de cada producto.
-        totalProductos: 0
-      };
-    }
-
-    // Obtener el precio del servicio y el de los productos usando los valores de servicePrices y productPrices.
-    const servicePrice = servicePrices[app.cutType] || 0;
-    const productPrice = app.products && Array.isArray(app.products)
-      ? app.products.reduce((sum, p) => sum + (productPrices[p] || 0), 0)
-      : 0;
-
-    dataByDate[date].totalCortes += 1;
-    dataByDate[date].totalDineroCortes += servicePrice;
-    dataByDate[date].totalDineroProductos += productPrice;
-
-    // Contar cada producto individualmente.
-    if (app.products && Array.isArray(app.products)) {
-      app.products.forEach(product => {
-        dataByDate[date].productos[product] = (dataByDate[date].productos[product] || 0) + 1;
-        dataByDate[date].totalProductos += 1;
+    document.getElementById("btnVisitCount").addEventListener("click", async () => {
+      // Filtrar solo las citas atendidas (consideramos "Vino" o "Corte Terminado" como cortes efectivos)
+      const attendedApps = appointments.filter(
+        app => app.estatus === "Vino" || app.estatus === "Corte Terminado"
+      );
+    
+      // Agrupar las citas por día y calcular totales
+      const dataByDate = {};
+      attendedApps.forEach(app => {
+        const date = app.date;
+        if (!dataByDate[date]) {
+          dataByDate[date] = {
+            Fecha: date,
+            "Total Cortes": 0,
+            "Dinero en Cortes": 0,
+            "Dinero en Productos": 0,
+            "Total Productos": 0,
+            productosTemp: {}
+          };
+        }
+        const servicePrice = servicePrices[app.cutType] || 0;
+        const productPrice = app.products && Array.isArray(app.products)
+          ? app.products.reduce((sum, p) => sum + (productPrices[p] || 0), 0)
+          : 0;
+    
+        dataByDate[date]["Total Cortes"] += 1;
+        dataByDate[date]["Dinero en Cortes"] += servicePrice;
+        dataByDate[date]["Dinero en Productos"] += productPrice;
+        dataByDate[date]["Total Productos"] += (app.products ? app.products.length : 0);
+    
+        // Contar productos individualmente para detalle
+        if (app.products && Array.isArray(app.products)) {
+          app.products.forEach(prod => {
+            dataByDate[date].productosTemp[prod] = (dataByDate[date].productosTemp[prod] || 0) + 1;
+          });
+        }
       });
-    }
-  });
-
-  // Generar el HTML del reporte EXEL sin estilos adicionales.
-  let html = `<html>
-    <head>
-      <title>Reporte EXEL - Días Trabajados</title>
-    </head>
-    <body>
-      <h1>Reporte EXEL - Días Trabajados</h1>`;
-
-  // Ordenar las fechas de forma ascendente y generar la tabla para cada día.
-  Object.keys(dataByDate).sort().forEach(date => {
-    const dayData = dataByDate[date];
-
-    // Generar el detalle de productos (nombre y cantidad).
-    let detalleProductos = "";
-    Object.keys(dayData.productos).forEach(prod => {
-      detalleProductos += `${prod}: ${dayData.productos[prod]}<br>`;
+    
+      // Convertir la información agrupada a un arreglo de objetos para SheetJS
+      const outputData = [];
+      Object.keys(dataByDate).sort().forEach(date => {
+        let dayData = dataByDate[date];
+        let detalle = "";
+        for (let prod in dayData.productosTemp) {
+          detalle += `${prod}: ${dayData.productosTemp[prod]}; `;
+        }
+        dayData["Detalle de Productos"] = detalle;
+        outputData.push({
+          Fecha: dayData.Fecha,
+          "Total Cortes": dayData["Total Cortes"],
+          "Dinero en Cortes": dayData["Dinero en Cortes"],
+          "Dinero en Productos": dayData["Dinero en Productos"],
+          "Total Productos": dayData["Total Productos"],
+          "Detalle de Productos": dayData["Detalle de Productos"]
+        });
+      });
+    
+      // Crear hoja y libro de Excel
+      const worksheet = XLSX.utils.json_to_sheet(outputData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
+      // Descargar archivo Excel
+      XLSX.writeFile(workbook, "reporte.xlsx");
     });
-    detalleProductos = detalleProductos ? detalleProductos : "Ninguno";
-
-    html += `<h2>${date}</h2>
-      <table border="1" cellspacing="0" cellpadding="5">
-        <tr>
-          <th>Total Cortes</th>
-          <th>Dinero en Cortes</th>
-          <th>Dinero en Productos</th>
-          <th>Total Productos</th>
-        </tr>
-        <tr>
-          <td>${dayData.totalCortes}</td>
-          <td>$${dayData.totalDineroCortes.toFixed(2)}</td>
-          <td>$${dayData.totalDineroProductos.toFixed(2)}</td>
-          <td>${dayData.totalProductos}</td>
-        </tr>
-      </table>
-      <p><strong>Detalle de Productos:</strong><br>${detalleProductos}</p>`;
-  });
-
-  html += `</body></html>`;
-
-  // Abrir la ventana del reporte y escribir el HTML generado.
-  let reportWin = window.open("", "_blank");
-  reportWin.document.write(html);
-  reportWin.document.close();
-});
   </script>
 </body>
 </html>
